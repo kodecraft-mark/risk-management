@@ -1,0 +1,178 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: risk-management-application
+  annotations:
+    version: v0.0.1
+    description: 'Risk Management Application'
+    wasmcloud.dev/authors: wasmCloud team
+    wasmcloud.dev/source-url: https://github.com/wasmCloud/wasmCloud/blob/main/examples/rust/components/echo-messaging/wadm.yaml
+    wasmcloud.dev/readme-md-url: https://github.com/wasmCloud/wasmCloud/blob/main/examples/rust/components/echo-messaging/README.md
+    wasmcloud.dev/homepage: https://github.com/wasmCloud/wasmCloud/tree/main/examples/rust/components/echo-messaging
+    wasmcloud.dev/categories: |
+      messaging,echo,nats,rust,example
+spec:
+  components:
+    - name: risk-active-positions
+      type: component
+      properties:
+        # To use the locally compiled code in this folder, use the line below instead after running `wash build`:
+        # image: file://./build/echo_messaging_s.wasm
+        image: file:///media/components/risk-active-positions/build/risk_active_positions_s.wasm
+        id: risk-active-positions
+      traits:
+        # Govern the spread/scheduling of the component
+        - type: spreadscaler
+          properties:
+            replicas: 1
+        # Establish a unidirectional link to the messaging capability provider (powered by NATS),
+        # so the `echo` component can make use of messaging interface functionality
+        # (i.e. making interacting with the messaging system, in this case NATS)            
+        - type: link
+          properties:
+            target: provider-nats-microservice
+            namespace: wasmcloud
+            package: messaging
+            interfaces: [consumer]
+            target_config:
+              - name: rap-tconfig
+                properties:
+                  cluster_uris: nats:4222
+    - name: risk-deribit-positions
+      type: component
+      properties:
+        # To use the locally compiled code in this folder, use the line below instead after running `wash build`:
+        # image: file://./build/echo_messaging_s.wasm
+        image: file:///media/components/risk-deribit-positions/build/risk_deribit_positions_s.wasm
+        id: risk-deribit-positions
+      traits:
+        # Govern the spread/scheduling of the component
+        - type: spreadscaler
+          properties:
+            replicas: 1
+        # Establish a unidirectional link to the messaging capability provider (powered by NATS),
+        # so the `echo` component can make use of messaging interface functionality
+        # (i.e. making interacting with the messaging system, in this case NATS)            
+        - type: link
+          properties:
+            target: provider-nats-microservice
+            namespace: wasmcloud
+            package: messaging
+            interfaces: [consumer]
+            target_config:
+              - name: rdp-tconfig
+                properties:
+                  cluster_uris: nats:4222
+
+    - name: risk-exercise-balances
+      type: component
+      properties:
+        # To use the locally compiled code in this folder, use the line below instead after running `wash build`:
+        # image: file://./build/echo_messaging_s.wasm
+        image: file:///media/components/risk-exercise-balances/build/risk_exercise_balances_s.wasm
+        id: risk-exercise-balances
+      traits:
+        # Govern the spread/scheduling of the component
+        - type: spreadscaler
+          properties:
+            replicas: 1
+        # Establish a unidirectional link to the messaging capability provider (powered by NATS),
+        # so the `echo` component can make use of messaging interface functionality
+        # (i.e. making interacting with the messaging system, in this case NATS)            
+        - type: link
+          properties:
+            target: provider-nats-microservice
+            namespace: wasmcloud
+            package: messaging
+            interfaces: [consumer]
+            target_config:
+              - name: reb-tconfig
+                properties:
+                  cluster_uris: nats:4222
+    - name: risk-jabra-deposits
+      type: component
+      properties:
+        # To use the locally compiled code in this folder, use the line below instead after running `wash build`:
+        # image: file://./build/echo_messaging_s.wasm
+        image: file:///media/components/risk-jabra-deposits/build/risk_jabra_deposits_s.wasm
+        id: risk-jabra-deposits
+      traits:
+        # Govern the spread/scheduling of the component
+        - type: spreadscaler
+          properties:
+            replicas: 1
+        # Establish a unidirectional link to the messaging capability provider (powered by NATS),
+        # so the `echo` component can make use of messaging interface functionality
+        # (i.e. making interacting with the messaging system, in this case NATS)            
+        - type: link
+          properties:
+            target: provider-nats-microservice
+            namespace: wasmcloud
+            package: messaging
+            interfaces: [consumer]
+            target_config:
+              - name: rjd-tconfig
+                properties:
+                  cluster_uris: nats:4222
+      
+    #===================================GROUP PROVIDER===================================
+    # Add a capability provider that implements `wasmcloud:messaging` using NATS
+    - name: provider-nats-microservice
+      type: capability
+      properties:
+        image: ghcr.io/jabratech/provider-nats-microservice:0.1.0
+        config:
+          - name: pnm-config
+            properties:
+              group: risk
+      traits:
+        # Since the `nats` capability provider calls an component to handle messages 
+        # coming over subscriptions, this provider needs a unidirectional link to the
+        # component that wil be called.
+        # 
+        # Here we link the `nats` provider (the "source"), to the `echo` component (the "target"),
+        # so that so the provider can deliver messages to the component (by invoking the wasmcloud:messaging/handler interface) .
+        - type: link
+          properties:
+            target: risk-active-positions
+            namespace: wasmcloud
+            package: messaging
+            interfaces: [handler]
+            source_config:
+              - name: rap-config
+                properties:
+                  cluster_uris: nats:4222
+                  endpoints: '*.active_positions.*'
+        - type: link
+          properties:
+            target: risk-deribit-positions
+            namespace: wasmcloud
+            package: messaging
+            interfaces: [handler]
+            source_config:
+              - name: rdp-config
+                properties:
+                  cluster_uris: nats:4222
+                  endpoints: '*deribit_positions.*'
+        - type: link
+          properties:
+            target: risk-exercise-balances
+            namespace: wasmcloud
+            package: messaging
+            interfaces: [handler]
+            source_config:
+              - name: reb-config
+                properties:
+                  cluster_uris: nats:4222
+                  endpoints: '*.exercise_balances.*'
+        - type: link
+          properties:
+            target: risk-jabra-deposits
+            namespace: wasmcloud
+            package: messaging
+            interfaces: [handler]
+            source_config:
+              - name: rjd-config
+                properties:
+                  cluster_uris: nats:4222
+                  endpoints: '*.jabra_deposits.*'
